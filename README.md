@@ -1,4 +1,5 @@
 # rate-limiter
+> A node rate limiter with cluster support
 
 ## install
 ```bash
