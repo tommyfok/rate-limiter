@@ -27,64 +27,29 @@ class RateLimiter {
         if (process.env.TAF_CONF) {
             // taf
             Taf.server.getServant(process.env.TAF_CONF).forEach(config => {
-                console.log('TAF_CONFIG_______________________________', config)
+                console.log('SERVANT____INFO____', config)
+                if (config.servant === 'WWW.WebLubanServer.RateLimitObj') {
+                    this.limiterPort = +config.endpoint.split(' -p ')[1].split(' -t ')[0]
+                }
             })
         } else {
-            // 本地
+            // 本地，随便写的端口
             this.limiterPort = 8707
         }
 
-        if (this.noMaster) {
-            // 代理master模式
-            // 标记我是master
-            let iammaster = (p = process) => {
-                this.cache = {}
-                p.on('message', (worker, message) => {
-                    if (message.action === '_masterCheck') {
-                        let ctx = this
-                        worker.send({
-                            result: _masterCheck.call(ctx, message.key, message.now),
-                            checkId: message.checkId,
-                            action: '_checkDone'
-                        })
-                    }
-                })
-            }
-            // 标记我是worker
-            let iamworker = (p = process) => {
-                this.resolvers = {}
-                p.on('message', message => {
-                    if (message.action === '_checkDone') {
-                        _finishCheck.call(this, message.checkId, message.result)
-                    }
-                })
-            }
-            let path = `./agent-master-id`
-            if (fs.existsSync(path)) {
-                this.mainWorkerId = fs.readFileSync(path).toString()
-            }
-            if (this.mainWorkerId) {
-                // 已经存在master
-                if (this.mainWorkerId == cluster.worker.id) {
-                    // 本进程就是代理master
-                    iammaster()
-                } else {
-                    // 本进程只是一个安分守己的worker
-                    iamworker()
-                }
-            } else {
-                // 不存在代理master，那么选举当前进程为代理master
-                this.mainWorkerId = cluster.worker.id
-                fs.writeFileSync(path, this.mainWorkerId)
-                iammaster()
-            }
+        let fpath = './master-worker-id'
+        if (fs.existsSync(fpath)) {
+            // 未争夺到资源，那就是worker了
+            this.server = 
         } else {
-            // 有真正的master模式
-            if (cluster.isMaster) {
-                iammaster()
-            } else {
-                iamworker()
-            }
+            // 争夺资源
+            fs.writeFileSync(fpath, cluster.worker.id)
+            this.server = net.createServer(client => {
+                console.log('client connected')
+            })
+            this.server.listen(this.limiterPort, () => {
+                console.log('limiter server bound')
+            })
         }
     }
 
