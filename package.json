@@ -1,0 +1,21 @@
+{
+  "name": "@tencent/rate-limiter",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://git.code.oa.com/NicolasHouse/rate-limiter.git"
+  },
+  "keywords": [
+    "rate-limiter"
+  ],
+  "author": "tommyhuo",
+  "license": "MIT",
+  "dependencies": {
+    "uuid": "^3.3.2"
+  }
+}
