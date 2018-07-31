@@ -8,17 +8,19 @@ tnpm i -S @tencent/rate-limiter
 
 ## use
 ```javascript
+const limitKey = 'testkey'
 const RL = require('@tencent/rate-limiter')
 const rl = new RL({
     time: 100, // ms
-    limit: 200
+    limit: 200,
+    key: limitKey
 })
 
-rl.check('your_key_to_check').then(pass => {
+rl.check().then(pass => {
     if (pass === true) {
-        console.log('not limited')
+        console.log('"${limitKey}" is not limited')
     } else {
-        console.log('limited key: "your_key_to_check"')
+        console.log('"${limitKey}" is limited')
     }
 }).catch(e => console.log)
 ```

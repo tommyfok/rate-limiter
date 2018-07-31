@@ -21,6 +21,8 @@ class RateLimiter {
 
         this.time = realOpts.time
         this.limit = realOpts.limit
+        this.key = realOpts.key
+
         if (cluster.isMaster) {
             this.cache = {}
             cluster.on('message', (worker, message) => {
@@ -44,6 +46,7 @@ class RateLimiter {
     }
 
     check(key) {
+        key = key || this.key
         if (cluster.isMaster) {
             return new Promise(resolve => {
                 resolve(_masterCheck.call(this, key, Date.now()))
