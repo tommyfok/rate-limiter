@@ -2,6 +2,7 @@
 const fs = require('fs')
 const cluster = require('cluster')
 const uuidv4 = require('uuid/v4')
+const Taf = require('@tencent/taf-rpc')
 
 // 默认每秒100次的限制
 class RateLimiter {
@@ -23,40 +24,99 @@ class RateLimiter {
         this.limit = realOpts.limit
         this.key = realOpts.key
 
-        if (cluster.isMaster) {
-            this.cache = {}
-            cluster.on('message', (worker, message) => {
-                if (message.action === '_masterCheck') {
-                    let ctx = this
-                    worker.send({
-                        result: _masterCheck.call(ctx, message.key, message.now),
-                        checkId: message.checkId,
-                        action: '_checkDone'
-                    })
-                }
+        if (process.env.TAF_CONF) {
+            // taf
+            Taf.server.getServant(process.env.TAF_CONF).forEach(config => {
+                console.log('TAF_CONFIG_______________________________', config)
             })
         } else {
-            this.resolvers = {}
-            process.on('message', message => {
-                if (message.action === '_checkDone') {
-                    _finishCheck.call(this, message.checkId, message.result)
+            // 本地
+            this.limiterPort = 8707
+        }
+
+        if (this.noMaster) {
+            // 代理master模式
+            // 标记我是master
+            let iammaster = (p = process) => {
+                this.cache = {}
+                p.on('message', (worker, message) => {
+                    if (message.action === '_masterCheck') {
+                        let ctx = this
+                        worker.send({
+                            result: _masterCheck.call(ctx, message.key, message.now),
+                            checkId: message.checkId,
+                            action: '_checkDone'
+                        })
+                    }
+                })
+            }
+            // 标记我是worker
+            let iamworker = (p = process) => {
+                this.resolvers = {}
+                p.on('message', message => {
+                    if (message.action === '_checkDone') {
+                        _finishCheck.call(this, message.checkId, message.result)
+                    }
+                })
+            }
+            let path = `./agent-master-id`
+            if (fs.existsSync(path)) {
+                this.mainWorkerId = fs.readFileSync(path).toString()
+            }
+            if (this.mainWorkerId) {
+                // 已经存在master
+                if (this.mainWorkerId == cluster.worker.id) {
+                    // 本进程就是代理master
+                    iammaster()
+                } else {
+                    // 本进程只是一个安分守己的worker
+                    iamworker()
                 }
-            })
+            } else {
+                // 不存在代理master，那么选举当前进程为代理master
+                this.mainWorkerId = cluster.worker.id
+                fs.writeFileSync(path, this.mainWorkerId)
+                iammaster()
+            }
+        } else {
+            // 有真正的master模式
+            if (cluster.isMaster) {
+                iammaster()
+            } else {
+                iamworker()
+            }
         }
     }
 
     check(key) {
         key = key || this.key
-        if (cluster.isMaster) {
-            return new Promise(resolve => {
-                resolve(_masterCheck.call(this, key, Date.now()))
-            })
+        if (this.mainWorkerId) {
+            // 代理master模式
+            if (this.mainWorkerId == cluster.worker.id) {
+                // 本进程就是代理master
+                return new Promise(resolve => {
+                    resolve(_masterCheck.call(this, key, Date.now()))
+                })
+            } else {
+                // 发送消息到代理master
+                let checkId = uuidv4()
+                _callMasterCheck(key, checkId, cluster.workers[this.mainWorkerId])
+                return new Promise(resolve => {
+                    this.resolvers[checkId] = resolve
+                })
+            }
         } else {
-            let checkId = uuidv4()
-            _callMasterCheck(key, checkId)
-            return new Promise(resolve => {
-                this.resolvers[checkId] = resolve
-            })
+            if (cluster.isMaster) {
+                return new Promise(resolve => {
+                    resolve(_masterCheck.call(this, key, Date.now()))
+                })
+            } else {
+                let checkId = uuidv4()
+                _callMasterCheck(key, checkId)
+                return new Promise(resolve => {
+                    this.resolvers[checkId] = resolve
+                })
+            }
         }
     }
 }
@@ -73,8 +133,8 @@ function _finishCheck(checkId, result) {
     delete this.resolvers[checkId]
 }
 
-function _callMasterCheck(key, checkId) {
-    process.send({
+function _callMasterCheck(key, checkId, p = process) {
+    p.send({
         key,
         checkId,
         now: Date.now(),

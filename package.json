@@ -16,6 +16,7 @@
   "author": "tommyhuo",
   "license": "MIT",
   "dependencies": {
+    "@tencent/taf-rpc": "^3.0.55",
     "uuid": "^3.3.2"
   }
 }
