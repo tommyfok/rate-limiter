@@ -1,24 +1,28 @@
 const RL = require('./index')
 const cluster = require('cluster')
+const fs = require('fs')
 const numCPUs = require('os').cpus().length
 const totalCheckCount = 80000
-const keyword = 'test'
+const keyword = 'hehe, another'
 let rl
 
+try {
+    fs.unlinkSync('./rate-limiter-tmp-server-created')
+    fs.unlinkSync('./rate-limiter-tmp-server-creating')
+    fs.unlinkSync('./rate-limiter-tmp-server')
+} catch(e) {}
+
 if (cluster.isMaster) {
-    console.log(`Master ${process.pid} is running`)
     for (let i = 0; i < numCPUs; i++) {
         cluster.fork()
     }
-} else {
-    rl = new RL({
-        time: 100,
-        limit: 100,
-        noMaster: true
-    })
-
-    test()
 }
+
+rl = new RL({
+    time: 100,
+    limit: 100,
+    onready: test
+})
 
 async function test() {
     let now = Date.now()
@@ -34,5 +38,5 @@ async function test() {
     }
 
     let diffMs = Date.now() - now
-    console.log(`check keyword '${keyword}' ${checkCount} times, use ${(diffMs/checkCount).toFixed(4)}ms per check, ${diffMs}ms total, ${allowCount} allowed, this is ${cluster.isMaster?'master':'worker'}`)
+    console.log(`检查关键词 '${keyword}' ${checkCount} times, use ${(diffMs/checkCount).toFixed(4)}ms per check, ${diffMs}ms total, ${allowCount} allowed, this is ${cluster.isMaster?'master':'worker'}`)
 }

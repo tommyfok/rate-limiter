@@ -27,40 +27,113 @@ class RateLimiter {
         this.key = realOpts.key
 
         // 争夺本地文件资源，抢占master身份
-        let filePath = './rate-limiter-tmp-server-id'
+        let creatingFilePath = './rate-limiter-tmp-server-creating'
+        let createdFilePath = './rate-limiter-tmp-server-created'
         let ipcPath = './rate-limiter-tmp-server'
-        try {
-            fs.unlinkSync(ipcPath)
-        } catch (e) {
-            console.log(e.message)
-        }
-        let isWorker = fs.existsSync(filePath)
+
+        let isWorker = fs.existsSync(creatingFilePath)
         if (isWorker) {
+            this.isMaster = false
+            this.resolvers = {}
+            let createClient = () => {
+                let isMasterReady = fs.existsSync(createdFilePath)
+                if (isMasterReady) {
+                    this.client = new Client({
+                        path: ipcPath,
+                        onready: () => {
+                            this.ready = true
+                            realOpts.onready(this.client)
+                        },
+                        ondata: data => {
+                            // 如果data符合格式
+                            // 那么从中获取结果
+                            if (data.action === 'CALL_MASTER_CHECK_RESULT') {
+                                _finishCheck.call(this, data.uuid, data.result)
+                            }
+                        },
+                        onerror: err => {
+                            console.log('client error', err.message)
+                        }
+                    })
+                } else {
+                    console.log('server not ready, wait 100ms')
+                    setTimeout(createClient, 100);
+                }
+            }
+            createClient()
         } else {
-            fs.writeFileSync(filePath, cluster.worker.id)
-            this.server = new Server(ipcPath, (data, socket) => {
-                // 如果data符合格式
-                // 那么给socket发送结果！
-                let parsedData
-                try {
-                    parsedData = JSON.parse(data)
-                    if (parsedData.action === 'CALL_MASTER_CHECK') {
-                        socket.write(JSON.stringify({
+            this.cache = {}
+            this.isMaster = true
+            fs.writeFileSync(creatingFilePath, '1')
+            this.server = new Server({
+                path: ipcPath,
+                ondata: (data, socket) => {
+                    // 如果data符合格式
+                    // 那么给socket发送结果
+                    if (data.action === 'CALL_MASTER_CHECK') {
+                        socket.write({
                             action: 'CALL_MASTER_CHECK_RESULT',
-                            result: _masterCheck(parsedData.key),
-                            uuid: parsedData.key
-                        }))
+                            result: _masterCheck.call(this, data.key, data.timestamp),
+                            uuid: data.key
+                        })
                     }
-                } catch (e) {
-                    console.log('data from client illegal', e.message)
+                },
+                onlisten: () => {
+                    fs.writeFileSync(createdFilePath, '1')
+                    this.ready = true
+                    realOpts.onready(this.server)
                 }
             })
         }
     }
 
     check(key) {
-        return true
+        key = key || this.key
+        if (this.isMaster) {
+            return new Promise(resolve => {
+                resolve(_masterCheck.call(this, key, Date.now()))
+            })
+        } else {
+            let uuid = uuidv4()
+            _callMasterCheck.call(this, key, uuid)
+            return new Promise(resolve => {
+                this.resolvers[uuid] = resolve
+            })
+        }
     }
 }
 
 module.exports = RateLimiter
+
+function _finishCheck(uuid, result) {
+    let resolver = this.resolvers[uuid]
+    if (resolver) {
+        resolver(result)
+    } else {
+        console.log('no resolver to finish check')
+    }
+    delete this.resolvers[uuid]
+}
+
+function _callMasterCheck(key, uuid) {
+    if (!this.ready) {
+        throw 'Rate Limiter Not Ready'
+    }
+    this.client.send({
+        key,
+        uuid,
+        now: Date.now(),
+        action: 'CALL_MASTER_CHECK'
+    })
+}
+
+function _masterCheck(key, now) {
+    this.cache[key] = this.cache[key] || []
+    let list = this.cache[key].filter(ts => ts && (ts > (now - this.time)))
+    this.cache[key] = list
+    let allow = list.length < this.limit
+    if (allow) {
+        list.push(now)
+    }
+    return allow
+}
