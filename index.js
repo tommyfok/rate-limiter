@@ -3,6 +3,8 @@ const fs = require('fs')
 const net = require('net')
 const cluster = require('cluster')
 const uuidv4 = require('uuid/v4')
+const Client = require('./client')
+const Server = require('./server')
 
 // 默认每秒100次的限制
 class RateLimiter {
@@ -25,26 +27,33 @@ class RateLimiter {
         this.key = realOpts.key
 
         // 争夺本地文件资源，抢占master身份
-        let filePath = './master-agent-id'
-        let ipcPath = './master-agent'
+        let filePath = './rate-limiter-tmp-server-id'
+        let ipcPath = './rate-limiter-tmp-server'
+        try {
+            fs.unlinkSync(ipcPath)
+        } catch (e) {
+            console.log(e.message)
+        }
         let isWorker = fs.existsSync(filePath)
         if (isWorker) {
-            // worker就直接连接到server吧
-            this.client = net.createConnection(ipcPath, () => {
-                console.log('client connected to server!!!')
-            })
-            this.client.on('data', data => {
-                console.log(data.toString())
-            })
         } else {
             fs.writeFileSync(filePath, cluster.worker.id)
-            // master需要起一个服务，监听一个ipc文件
-            this.server = net.createServer()
-            this.server.listen(ipcPath, () => {
-                console.log(`listening on ${ipcPath}`)
-            })
-            this.server.on('data', data => {
-                console.log('来数据了！', data.toString())
+            this.server = new Server(ipcPath, (data, socket) => {
+                // 如果data符合格式
+                // 那么给socket发送结果！
+                let parsedData
+                try {
+                    parsedData = JSON.parse(data)
+                    if (parsedData.action === 'CALL_MASTER_CHECK') {
+                        socket.write(JSON.stringify({
+                            action: 'CALL_MASTER_CHECK_RESULT',
+                            result: _masterCheck(parsedData.key),
+                            uuid: parsedData.key
+                        }))
+                    }
+                } catch (e) {
+                    console.log('data from client illegal', e.message)
+                }
             })
         }
     }
