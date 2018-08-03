@@ -19,10 +19,17 @@ if (cluster.isMaster) {
 }
 
 rl = new RL({
-    time: 100,
-    limit: 100,
-    onready: test
+    time: 5000,
+    limit: 1,
+    // onready: test
+    onready: singleTest
 })
+
+let nnn = Date.now()
+async function singleTest() {
+    console.log(`+${Date.now() - nnn}ms`, await rl.check(keyword))
+    setTimeout(singleTest, Math.random() * 1000)
+}
 
 async function test() {
     let now = Date.now()
@@ -32,6 +39,7 @@ async function test() {
     for (let i = 0; i < checkCount; i++) {
         let checkTime = Date.now()
         let allow = await rl.check(keyword)
+        await smallDelay()
         if (allow === true) {
             allowCount++
         }
@@ -39,4 +47,10 @@ async function test() {
 
     let diffMs = Date.now() - now
     console.log(`检查关键词 '${keyword}' ${checkCount} times, use ${(diffMs/checkCount).toFixed(4)}ms per check, ${diffMs}ms total, ${allowCount} allowed, this is ${cluster.isMaster?'master':'worker'}`)
+}
+
+function smallDelay() {
+    return new Promise(res => {
+        setTimeout(res)
+    })
 }
