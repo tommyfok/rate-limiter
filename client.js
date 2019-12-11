@@ -3,7 +3,7 @@ const fnNull = () => {}
 
 class SimpleConnect {
     constructor({
-        path = './tmp-server',
+        path,
         ondata = fnNull,
         onerror = fnNull,
         onready = fnNull

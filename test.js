@@ -1,34 +1,43 @@
 const RL = require('./index')
 const cluster = require('cluster')
 const fs = require('fs')
-const numCPUs = require('os').cpus().length
+const os = require('os')
+const numCPUs = os.cpus().length
 const totalCheckCount = 80000
 const keyword = 'hehe, another'
+const uuidv4 = require('uuid/v4')
 let rl
 
 try {
-    fs.unlinkSync('./rate-limiter-tmp-server-created')
-    fs.unlinkSync('./rate-limiter-tmp-server-creating')
-    fs.unlinkSync('./rate-limiter-tmp-server')
-} catch(e) {}
+    fs.unlinkSync('./ipc-tmp-path-name')
+} catch (e) {}
 
 if (cluster.isMaster) {
+    console.log(`CPU总数${numCPUs}`)
     for (let i = 0; i < numCPUs; i++) {
         cluster.fork()
     }
+} else {
+    rl = new RL({
+        time: 3000,
+        limit: 10,
+        ipcPath: 8899,
+        // onready: test
+        onready: singleTest
+    })
 }
-
-rl = new RL({
-    time: 5000,
-    limit: 1,
-    // onready: test
-    onready: singleTest
-})
 
 let nnn = Date.now()
 async function singleTest() {
-    console.log(`+${Date.now() - nnn}ms`, await rl.check(keyword))
-    setTimeout(singleTest, Math.random() * 1000)
+    let pass = await rl.check(keyword)
+    if (pass) {
+        let wid
+        if (cluster.isWorker) {
+            wid = cluster.worker.id
+        }
+        console.log(`+${Date.now() - nnn}ms`, pass, wid)
+    }
+    setTimeout(singleTest, Math.random() * 100)
 }
 
 async function test() {

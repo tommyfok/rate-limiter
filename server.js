@@ -1,9 +1,11 @@
+const os = require('os')
 const net = require('net')
+const fs = require('fs')
 const fnNull = () => {}
 
 class SimpleServer {
     constructor({
-        path = './tmp-server',
+        path,
         ondata = fnNull,
         onlisten = fnNull
     }) {

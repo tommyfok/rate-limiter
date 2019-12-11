@@ -1,6 +1,7 @@
 // read file test
 const fs = require('fs')
 const net = require('net')
+const os = require('os')
 const cluster = require('cluster')
 const uuidv4 = require('uuid/v4')
 const Client = require('./client')
@@ -26,10 +27,10 @@ class RateLimiter {
         this.limit = realOpts.limit
         this.key = realOpts.key
 
+        let ipcPath = options.ipcPath
         // 争夺本地文件资源，抢占master身份
-        let creatingFilePath = './rate-limiter-tmp-server-creating'
-        let createdFilePath = './rate-limiter-tmp-server-created'
-        let ipcPath = './rate-limiter-tmp-server'
+        let creatingFilePath = `${ipcPath}-creating`
+        let createdFilePath = `${ipcPath}-created`
 
         let isWorker = fs.existsSync(creatingFilePath)
         if (isWorker) {
@@ -43,6 +44,7 @@ class RateLimiter {
                         onready: () => {
                             this.ready = true
                             realOpts.onready(this.client)
+                            console.log('client is connected to server', ipcPath)
                         },
                         ondata: data => {
                             // 如果data符合格式
@@ -74,7 +76,7 @@ class RateLimiter {
                         socket.write({
                             action: 'CALL_MASTER_CHECK_RESULT',
                             result: _masterCheck.call(this, data.key, data.timestamp),
-                            uuid: data.key
+                            uuid: data.uuid
                         })
                     }
                 },
@@ -110,7 +112,7 @@ function _finishCheck(uuid, result) {
     if (resolver) {
         resolver(result)
     } else {
-        console.log('no resolver to finish check')
+        console.log('no resolver to finish check', this.resolvers, uuid)
     }
     delete this.resolvers[uuid]
 }
